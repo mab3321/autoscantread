@@ -7,27 +7,37 @@ import os  # Import os module for handling file paths
 
 # Initialize the Picamera2 object
 picam2 = Picamera2()
-picam2.start_preview(Preview.QTGL)
 
-# Create and configure the preview with a compatible format for QGlPicamera2
+# Maximum resolution for the 16MP camera (preview set to 4096 as allowed)
+max_resolution = (4656, 3496)  # Max capture resolution
+preview_resolution = (4096, 2160)  # Adjusted preview resolution
+
+# Create and configure the preview with the specified resolution
 preview_config = picam2.create_preview_configuration(
-    main={"size": (2328, 1748), "format": "XBGR8888"}
+    main={"size": preview_resolution, "format": "XBGR8888"}
 )
 picam2.configure(preview_config)
 
-# Start the camera
+# Start the camera preview
+picam2.start_preview(Preview.QTGL)
 picam2.start()
 time.sleep(1)
 
+
+picam2.set_controls({"AfMode": 0, "LensPosition": 10})
 # Serial setup for Arduino data
 ser = serial.Serial('/dev/ttyUSB0', 9600, timeout=1)  # Replace with correct serial port
 time.sleep(2)  # Allow time for the serial connection to initialize
+
+# Track previous voltage for edge detection
+previous_voltage = None
 
 def capture_image():
     # Generate a unique filename based on the current time
     file_path = os.path.join(os.getcwd(), f"captured_image_{int(time.time())}.jpg")
     picam2.capture_file(file_path)
     print(f"Image captured and saved to {file_path}")
+    time.sleep(1)  # Wait 1 seconds to avoid frequent captures
 
 try:
     print("Monitoring sensor data...")
@@ -41,11 +51,15 @@ try:
             if "|" in data:
                 parts = data.split("|")
                 voltage_str = parts[1].split(":")[1].strip()  # Extract voltage part
-                voltage = float(voltage_str)  # Convert to float for comparison
+                current_voltage = float(voltage_str)  # Convert to float for comparison
                 
-                # Check if voltage is below threshold
-                if voltage < 4.0:
+                # Check for negative edge: current < 4 and previous >= 4
+                if previous_voltage is not None and previous_voltage >= 4.0 and current_voltage < 4.0:
+                    print(f"Negative edge detected: {previous_voltage} -> {current_voltage}")
                     capture_image()
+                
+                # Update previous voltage
+                previous_voltage = current_voltage
                 
         time.sleep(0.1)  # Delay for stability
 
