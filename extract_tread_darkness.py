@@ -2,12 +2,17 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import numpy as np
 import cv2
-from scipy.interpolate import interp1d
-from scipy.signal import argrelextrema
-from scipy.signal import butter, filtfilt
-Constant = 0.12
+
+Constant = 0.06  # Scaling factor
 
 def preprocess_image(image_path):
+    """
+    Preprocess the image: Convert to grayscale, apply median blur and thresholding.
+    Args:
+        image_path (str): Path to the image file.
+    Returns:
+        numpy array: Thresholded image.
+    """
     # Load the image
     image = cv2.imread(image_path)
 
@@ -21,6 +26,13 @@ def preprocess_image(image_path):
     return thresh
 
 def find_upper_border(thresh):
+    """
+    Find the uppermost non-zero pixels in each column using edge detection.
+    Args:
+        thresh (numpy array): Thresholded image.
+    Returns:
+        numpy array: Array of the upper border positions for each column.
+    """
     # Find the uppermost non-zero pixels in each column using Canny edge detector
     edges = cv2.Canny(thresh, 50, 150)  # Adjust the threshold values
 
@@ -37,6 +49,13 @@ def find_upper_border(thresh):
     return upper_border
 
 def fill_gaps_with_previous(upper_border):
+    """
+    Fill gaps in the upper border with the previous non-zero value.
+    Args:
+        upper_border (numpy array): Array of upper border positions.
+    Returns:
+        numpy array: Array with gaps filled.
+    """
     # Fill gaps with the same number as the previous non-zero value
     for i in range(1, len(upper_border)):
         if upper_border[i] == 0:
@@ -44,20 +63,81 @@ def fill_gaps_with_previous(upper_border):
 
     return upper_border
 
-def smooth_and_plot(upper_border):
-    # Smooth the upper border
-    window_size = 5
-    upper_border_smoothed = np.convolve(upper_border, np.ones(window_size) / window_size, mode='valid')
+def truncate_data(upper_border, start=200, end=1400):
+    """
+    Truncate the data for the specified x-axis range.
+    Args:
+        upper_border (numpy array): Array representing the upper border.
+        start (int): Start index for truncation.
+        end (int): End index for truncation.
+    Returns:
+        numpy array: Truncated upper border.
+    """
+    return upper_border[start:end]
 
-    # Plot the upper border
-    plt.plot(upper_border_smoothed)
-    plt.xlabel("Column Number")
-    plt.ylabel("Row Number")
-    plt.title("Smoothed Upper Border with Gaps Filled")
+def smooth_and_plot_truncated_with_zero(upper_border, start=200, end=1400, scale=0.096):
+    """
+    Smooth the truncated upper border, scale it, and shift the central dip to 0.
+    Args:
+        upper_border (numpy array): Array representing the upper border.
+        start (int): Start index for truncation.
+        end (int): End index for truncation.
+        scale (float): Scaling factor for the y-axis.
+    """
+    # Truncate the data
+    truncated_border = truncate_data(upper_border, start, end)
+    
+    # Smooth the truncated data
+    window_size = 5
+    smoothed_truncated_border = np.convolve(truncated_border, np.ones(window_size) / window_size, mode='valid')
+    
+    # Scale the y-axis values
+    scaled_smoothed_border = smoothed_truncated_border * scale
+    
+    # Shift the graph so that the central dip touches 0
+    scaled_smoothed_border -= np.min(scaled_smoothed_border)
+    
+    # Generate x-axis values for the truncated data
+    x_values = np.arange(start, start + len(scaled_smoothed_border))
+    
+    # Plot the truncated, smoothed, and shifted data
+    plt.plot(x_values, scaled_smoothed_border, color='blue', label='Smoothed Border with Central Dip at 0')
+    plt.xlabel("Column Number (Truncated)")
+    plt.ylabel(f"Row Number (Scaled and Shifted)")
+    plt.title(f"Smoothed Upper Border (Shifted: Central Dip at 0, Truncated: {start}-{end})")
+    
+    # Customize y-axis ticks to show 0.5 mm intervals
+    y_min = 0
+    y_max = np.ceil(np.max(scaled_smoothed_border) / 0.5) * 0.5  # Round up to the nearest 0.5
+    y_ticks = np.arange(y_min, y_max + 0.5, 0.5)  # Create ticks at 0.5 mm intervals
+    plt.yticks(y_ticks)
+    
+    plt.legend()
+    plt.grid(True)
     plt.show()
 
-# Load the image using OpenCV (replace 'your_image.jpg' with the path to your image)
+def DrawGraphWithZero(image_path, start=200, end=1400, scale=0.096):
+    """
+    Preprocess the image, find the upper border, and plot a truncated graph with central dip touching 0.
+    Args:
+        image_path (str): Path to the image file.
+        start (int): Start index for truncation.
+        end (int): End index for truncation.
+        scale (float): Scaling factor for the y-axis.
+    """
+    thresh = preprocess_image(image_path)
+    upper_border = find_upper_border(thresh)
+    upper_border_filled = fill_gaps_with_previous(upper_border)
+    smooth_and_plot_truncated_with_zero(upper_border_filled, start, end, scale)
+
 def extract_tread(imgPath):
+    """
+    Extract the tread from the image and save it as a grayscale image.
+    Args:
+        imgPath (str): Path to the input image.
+    Returns:
+        str: Path to the output grayscale image.
+    """
     image = cv2.imread(imgPath)
 
     # Get the red channel
@@ -69,79 +149,14 @@ def extract_tread(imgPath):
     # Set the pixel values to (0, 0, 0) for all channels where the mask is True
     image[mask] = [0, 0, 0]
     # Convert the numpy array to an image and save it
-    # image_RGB = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     image_PIL = Image.fromarray(gray_image)
-    image_PIL.save('image.jpg')
+    output_path = 'image.jpg'
+    image_PIL.save(output_path)
     print("Tread Extraction From Image Completed.")
-    return "image.jpg"
-def load_binary_image(imgPath):
-    """Load the binary image using OpenCV."""
-    return cv2.imread(imgPath, cv2.IMREAD_GRAYSCALE)
+    return output_path
 
-def get_unique_pixels_coordinates(binary_image):
-    """Get the coordinates of the non-zero (white) pixels in the binary image."""
-    return np.where(binary_image > 100)
-
-def spline_interpolation(x, y):
-    """Perform spline interpolation."""
-    f = interp1d(x, y, kind='cubic')
-    return f
-
-def apply_low_pass_filter(y_fit, window_size):
-    """Apply low-pass filter (simple moving average)."""
-    return np.convolve(y_fit, np.ones(window_size) / window_size, mode='same')
-
-def find_relative_extrema(x_fit, y_smooth):
-    """Find relative minima and maxima in the smoothed curve."""
-    minima_indices = argrelextrema(y_smooth, np.less)
-    maxima_indices = argrelextrema(y_smooth, np.greater)
-
-    minima_x = x_fit[minima_indices]
-    minima_y = y_smooth[minima_indices]
-
-    maxima_x = x_fit[maxima_indices]
-    maxima_y = y_smooth[maxima_indices]
-
-    return minima_x, minima_y, maxima_x, maxima_y
-
-def plot_smoothed_curve(x_fit, y_smooth):
-    """Create a plot of the smoothed fitted curve."""
-    plt.plot(x_fit, y_smooth, 'r-', label='Smoothed Curve', linewidth=2)
-
-def plot_extrema(maxima_x, maxima_y, prev_x, prev_y):
-    """Plot relative maxima and annotate the plot with differences."""
-    for x, y in zip(maxima_x, maxima_y):
-        if prev_x is not None and prev_y is not None and abs(y - prev_y) > 20:
-            difference = abs(y - prev_y) * Constant
-            plt.scatter(x, y, c='g', marker='o', s=100, label='Maxima')
-            plt.annotate(f'Diff: {difference:.2f} mm', (x, y), textcoords="offset points", xytext=(0, -20), ha='center', fontsize=7)
-            prev_x = x
-            prev_y = y
-        elif prev_x is None or prev_y is None:
-            plt.scatter(x, y, c='g', marker='o', s=100, label='Maxima')
-            plt.annotate(f'({x:.2f}, {y:.2f})', (x, y), textcoords="offset points", xytext=(0, -20), ha='center', fontsize=5)
-            prev_x = x
-            prev_y = y
-
-def set_plot_properties(x_label, y_label, title):
-    """Set properties for the plot."""
-    plt.xlabel(x_label)
-    plt.ylabel(y_label)
-    plt.title(title)
-    plt.grid(True)
-
-def show_plot():
-    """Show the plot."""
-    plt.show()
-
-def DrawGraph(image_path):
-    thresh = preprocess_image(image_path)
-    upper_border = find_upper_border(thresh)
-    upper_border_filled = fill_gaps_with_previous(upper_border)
-    smooth_and_plot(upper_border_filled)
-
-imgPath = r"cop123.jpg"
+# Example usage
+imgPath = r"captured_image_1734163333.jpg"
 removedBg = extract_tread(imgPath)
-DrawGraph(removedBg)
-
+DrawGraphWithZero(removedBg, start=300, end=50000, scale=Constant)

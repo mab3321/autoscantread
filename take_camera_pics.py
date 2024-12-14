@@ -23,8 +23,9 @@ picam2.start_preview(Preview.QTGL)
 picam2.start()
 time.sleep(1)
 
+lensPosition = 8.3
 #Use adjust cam lens script to calculate LensPosition
-picam2.set_controls({"AfMode": 0, "LensPosition": 7})
+picam2.set_controls({"AfMode": 0, "LensPosition": lensPosition})
 # Serial setup for Arduino data
 ser = serial.Serial('/dev/ttyUSB0', 9600, timeout=1)  # Replace with correct serial port
 time.sleep(2)  # Allow time for the serial connection to initialize
