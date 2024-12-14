@@ -23,8 +23,6 @@ picam2.start_preview(Preview.QTGL)
 picam2.start()
 time.sleep(1)
 
-#Use adjust cam lens script to calculate LensPosition
-picam2.set_controls({"AfMode": 0, "LensPosition": 7})
 # Serial setup for Arduino data
 ser = serial.Serial('/dev/ttyUSB0', 9600, timeout=1)  # Replace with correct serial port
 time.sleep(2)  # Allow time for the serial connection to initialize
@@ -39,9 +37,27 @@ def capture_image():
     print(f"Image captured and saved to {file_path}")
     time.sleep(1)  # Wait 1 seconds to avoid frequent captures
 
+def adjust_lens_position():
+    try:
+        # Ask user for lens position input
+        lens_position = float(input("Enter lens position (0.0 to 15.0): "))
+        
+        # Ensure lens position is within the valid range (0.0 to 15.0)
+        if 0.0 <= lens_position <= 15.0:
+            picam2.set_controls({"AfMode": 0, "LensPosition": lens_position})
+            print(f"Lens position set to {lens_position}")
+        else:
+            print("Invalid lens position. Please enter a value between 0.0 and 15.0.")
+    except ValueError:
+        print("Invalid input. Please enter a numeric value (e.g., 4.6).")
+
 try:
     print("Monitoring sensor data...")
+    
     while True:
+        # Prompt user for lens adjustment
+        adjust_lens_position()
+
         if ser.in_waiting > 0:
             # Read data from Arduino
             data = ser.readline().decode('utf-8').strip()
